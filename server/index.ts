@@ -1,6 +1,7 @@
 
 import express from "express";
 import dotenv from "dotenv";
+import { z } from "zod";
 import { analytics } from "./analytics.ts";
 import { cosmetics } from "./cosmetics.ts";
 import { cashShop } from "./shop-cash.ts";
@@ -53,14 +54,24 @@ app.get("/api/shop", async (req, res) => {
   }
 });
 
+const statsQuerySchema = z.object({
+  name: z.string({ error: "Debes proporcionar un nombre de jugador." })
+    .trim()
+    .min(1, "Debes proporcionar un nombre de jugador.")
+    .max(100, "El nombre del jugador debe tener como máximo 100 caracteres."),
+  accountType: z.enum(["epic", "psn", "xbl"], {
+    error: "accountType debe ser epic, psn o xbl.",
+  }).default("epic"),
+  timeWindow: z.enum(["lifetime", "season"], {
+    error: "timeWindow debe ser lifetime o season.",
+  }).default("lifetime"),
+});
+
 app.get("/api/stats", async (req, res) => {
   try {
-    const { name, accountType = "epic", timeWindow = "lifetime" } = req.query;
-
-    if (!name || typeof name !== "string") {
-      return res.status(400).json({
-        error: "Debes proporcionar un nombre de jugador",
-      });
+    const query = statsQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      return res.status(400).json({ error: query.error.issues[0].message });
     }
 
     if (!process.env.FORTNITE_API_KEY?.trim()) {
@@ -69,12 +80,7 @@ app.get("/api/stats", async (req, res) => {
       });
     }
 
-    const params = new URLSearchParams({
-      name,
-      accountType: String(accountType),
-      timeWindow: String(timeWindow),
-    });
-
+    const params = new URLSearchParams(query.data);
 
     const response = await fetch(
       `https://fortnite-api.com/v2/stats/br/v2?${params}`,
